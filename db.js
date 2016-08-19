@@ -46,5 +46,6 @@ function getLastSyncRecord(recordConsumerCb) {
 }
 
 module.exports = {
-  getLastSyncRecord: getLastSyncRecord
+  getLastSyncRecord: getLastSyncRecord,
+  acquireConnection: acquireConnection
 }

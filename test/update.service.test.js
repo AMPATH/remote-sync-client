@@ -20,7 +20,7 @@
       });
     });
     
-    it.only('See what happens', function() {
+    it('See what happens', function() {
       let http = require('https');
       let options = {
         host: 'api.github.com',

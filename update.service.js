@@ -3,7 +3,9 @@
   
   var config = require('./config');
   var configUtil = require('util.config');
+  var execSync = require('child_process').execSync;
   var Client = require('scp2').Client;
+  var db = require('./db');
   
   Client.defaults({
     host: config.remoteServer.host,
@@ -53,72 +55,101 @@
   }
   
   function _processUpdates(updates) {
+    var maxFilesNumber = config.maxFileUpdates || 4;
+    
     f(updates.length > 1) {
       updates.sort(function(u1, u2) {
         return u1.sequenceNumber - u2.sequenceNumber;
       });
     }
     
-    if(updates.length > config.parallelDownloads) {
-      var parallel = config.parallelDownloads || 4;
-      var iterations = Math.floor(updates.length/parallel);
-      var clients = new Array(parallel);
-      var status = new Array(parallel);
-      var pending = 0;
-      var firstIteration = true;
-      
-      for(var i=0; i<parallel; i++) {
-        clients[i] = new Client();
-        status[i] = STATUS_PROGRESS;
+    if(updates.length > maxFilesNumber) {
+      updates.length = maxFilesNumber;
+    }
+    
+    var clients = new Array(maxFilesNumber);
+    var status = new Array(maxFilesNumber);
+    var pending = 0;
+    
+    for(var i=0; i<parallel; i++) {
+      clients[i] = new Client();
+      status[i] = STATUS_PROGRESS;
+    }
+    
+    var __allDone = function(status) {
+      for(var x=0; x<status.length; x++) {
+        if(status[x] == STATUS_PROGRESS) return false;
       }
-      
-      function __allSuccess(status) {
-        for(var x=0; x<status.length; x++) {
-          if(status[x] != STATUS_SUCCESS) return false;
-        }
-        return true;
-      }
-      
-      for(var i=0; i<iterations; i++) {
-        if(pending==0 && (__allSuccess(status) || firstIteration)) {
-          setTimeout(function() {
-            for(var j=i*parallel; j<(i+1) * parallel; j++) {
-              status[j%parallel] = STATUS_PROGRESS;
-              pending++;
-              var src = config.remoteServer.sshConfig.zipBasePath + updates[i].filename;
-              var dest = config.zipDirectory;
-              clients[j%parallel].download(src, dest, function(err) {
-                console.error('Error downloading ' + src, err.message);
-                status[j%parallel] = STATUS_ERROR;
-                pending--;
+      return true;
+    }
+    
+    var __updateDb = function(updates, status) {
+      var cmd = 'mysql -u' + config.mysql.user + ' -p' + config.mysql.password;
+      cmd += ' < ';
+      var ret;
+      for(var z=0; z<updates.length; z++) {
+        if(status[z] == STATUS_SUCCESS) {
+          var dateRun = (new Date()).toISOString();
+          cmd += updates[z].filePath;
+          try {
+            var ret = execSync(cmd);
+            var query = 'insert into client_sync_log(filename,uuid,datetime_run,'
+                + 'sequence_number,status) values(' 
+                + updates[z].filename + ','
+                + updates[z].uuid + ','
+                + '\'' + dateRun + '\','
+                + updates[z].sequenceNumber + ','
+                + '\'SUCCESS\')';
+                
+          } catch (err) {
+            var details = err.stack || err.message;
+            var query = 'insert into client_sync_log(filename,uuid,datetime_run,'
+                + 'sequence_number,status,details) values(' 
+                + updates[z].filename + ','
+                + updates[z].uuid + ','
+                + '\'' + dateRun + '\','
+                + updates[z].sequenceNumber + ','
+                + '\'ERROR\',\'' + details + '\')'; 
+            console.error('Error updating database', err);
+            break;
+          } finally {
+            // run the query
+            db.acquireConnection(function(err, connection) {
+              console.log('Updating sync status, running query: ' + query);
+              connection.query(query, function(err, status) {
+                
               });
-              
-              clients[j%parallel].on('end', function() {
-                status[j%parallel] = STATUS_SUCCESS
-                pending--;
-              });
-            }
-          },200);
-          
-          // Bad way of doing it
-          while()  
+            })
+          }
+        } else {
+          // Abort immediately 
+          break;
         }
       }
     }
-    for(var i=0; i<updates.length; i++) {
-      status.push(STATUS_PROGRESS);
-      client.scp({
-            host: config.remoteServer.host,
-            username: config.remoteServer.sshConfig.username,
-            password: config.remoteServer.sshConfig.password,
-            path: config.remoteServer.sshConfig.zipBasePath + updates[i].filename;
-        }, config.zipDirectory, function(err) {
-          console.error('Error downloading file ' + updates[i].filename);
-        });
-      client.on('end',function() {
-        status[i] = STATUS_SUCCESS;    
-      })
-    } 
+    
+    for(var i=0; i<maxFilesNumber; i++) {
+      status[i] = STATUS_PROGRESS;
+      pending++;
+      var src = config.remoteServer.sshConfig.zipBasePath + updates[i].filename;
+      var dest = config.zipDirectory;
+      updates[i].filePath = dest + updates[i].filename;
+      clients[i].download(src, dest, function(err) {
+        console.error('Error downloading ' + src, err.message);
+        status[i] = STATUS_ERROR;
+        pending--;
+      });
+      
+      clients[i].on('end', function() {
+        status[i] = STATUS_SUCCESS
+        pending--;
+        
+        if(__allDone(status)) {
+          
+        }
+      });
+    }
+
   }
   
   function _path(lastSyncRecord) {
