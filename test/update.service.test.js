@@ -7,7 +7,7 @@ var testUrl = 'http://test.wicked.tech';
 var testConfig = {
   port: 8000,
   maxFileUpdates: 5,
-  zipDirectory: '/opt/sync/zips/',
+  zipDirectory: '/Users/willa/Projects/scratchpad/testzip/',
   location: {
     uuid: 'AMRS location Uuid',
     name: 'location name'
@@ -20,9 +20,9 @@ var testConfig = {
     },
     sshConfig: {
       port: 22,
-      zipBasePath: '/opt/sync/',
-      username: 'username',
-      password: 'password',
+      zipBasePath: '/root/',
+      username: 'root',
+      password: '1hat3th15',
       privateKeyFile: '/home/syncuser/.ssh/id_rsa',
       numberAttempts: 3
     }
@@ -41,7 +41,7 @@ var testConfig = {
 var updatesResponse = {
  "result": [
    {
-     "filename": "2016-08-22 15:29:53.tar.gz",
+     "filename": "coco1.tgz",
      "uuid": "later-uuid",
      "dateCreated": "2016-08-22 15:29:53",
      "sequenceNumber": 3,
@@ -51,7 +51,7 @@ var updatesResponse = {
      }
    },
    {
-     "filename": "2016-08-22 13:40:55.tar.gz",
+     "filename": "coco.tgz",
      "uuid": "earlier-uuid",
      "dateCreated": "2016-08-22 13:40:55",
      "sequenceNumber": 2,
@@ -63,7 +63,7 @@ var updatesResponse = {
  ]
 };
 
-describe.only('Update service unit tests', function(){
+describe('Update service unit tests', function(){
   var secondResponse = {
    "result": [{
        "filename": "2016-08-22 15:29:53.tar.gz",
@@ -101,4 +101,7 @@ describe.only('Update service unit tests', function(){
     });
   });
   
+  it.skip('processUpdates should do the right thing', function(done) {
+    updateService.processUpdates(updatesResponse.result, testConfig, done);
+  });
 });  

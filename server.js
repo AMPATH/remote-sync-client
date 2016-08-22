@@ -16,7 +16,7 @@
     method: 'GET',
     path: '/',
     handler: function(request, reply) {
-      return reply('Wassup buddy!');
+      return reply('<h2>Karibu sana, kurasa iko kwenye matengenezo!</h2>');
     }
   });
   
@@ -24,7 +24,7 @@
     if(err) {
       throw err;
     }
-    var task = updates.scheduleUpdates();
+    var task = updates.scheduleUpdates(serverConfigs.updateSchedule);
     task.start();
     console.log('Kick as* server running at: ', server.info.uri);
   })

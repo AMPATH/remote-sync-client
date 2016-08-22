@@ -19,7 +19,7 @@ function acquireConnection(consumerCb) {
   });
 }
 
-function getLastSyncRecord(recordConsumerCb) {
+function getLastSyncRecord(recordConsumerCb, consumerArgsArry) {
   pool.getConnection(function(err, connection) {
     if(err) {
       console.error('Error acquiring connection from pool');
@@ -37,9 +37,11 @@ function getLastSyncRecord(recordConsumerCb) {
         throw new Error(err.message);
       }
       if(results.length > 0) {
-        recordConsumerCb(results[0]);
+        consumerArgsArry.splice(0, 0, results[0]);
+        recordConsumerCb.apply(null, consumerArgsArry);
       } else {
-        recordConsumerCb(null);
+        consumerArgsArry.splice(0, 0, null);
+        recordConsumerCb.apply(null, consumerArgsArry);
       }
     }); 
   });           
