@@ -3,6 +3,7 @@
   
   const Hapi = require('hapi');
   const serverConfigs = require('./config');
+  const updates = require('./update.service');
   
   const server = new Hapi.Server();
   
@@ -15,7 +16,6 @@
     method: 'GET',
     path: '/',
     handler: function(request, reply) {
-      console.log('Request is ', request);
       return reply('Wassup buddy!');
     }
   });
@@ -24,6 +24,8 @@
     if(err) {
       throw err;
     }
+    var task = updates.scheduleUpdates();
+    task.start();
     console.log('Kick as* server running at: ', server.info.uri);
   })
 })();

@@ -3,6 +3,7 @@
 var mysql = require('mysql');
 var config = require('./config');
 var pool = mysql.createPool(config.mysql);
+var Promise = require('bluebird');
 
 // Db values
 var dbName = config.mysql.database || 'sync_log_db';
@@ -24,18 +25,17 @@ function getLastSyncRecord(recordConsumerCb) {
       console.error('Error acquiring connection from pool');
       throw err;
     }
-    var query = 'select * from ' + tableName
-                + ' where sequence_number = 30'; 
-                // + '(select max(sequence_number) from ' + tableName + ')';
+    var query = 'select * from ' + tableName + ' where sequence_number = '
+                + '(select max(sequence_number) from ' + tableName + ')';
     
     console.log('Running query ' + query);            
     connection.query(query, function(err, results) {
+      connection.release();
       if(err) {
         console.error('An error occured while running query ' + query 
               + ', error message is ', err.message);
-        throw err;
+        throw new Error(err.message);
       }
-      connection.release();
       if(results.length > 0) {
         recordConsumerCb(results[0]);
       } else {
@@ -45,7 +45,10 @@ function getLastSyncRecord(recordConsumerCb) {
   });           
 }
 
+var getConnection = Promise.promisify(pool.getConnection);
+
 module.exports = {
   getLastSyncRecord: getLastSyncRecord,
-  acquireConnection: acquireConnection
+  acquireConnection: acquireConnection,
+  getConnection: getConnection,
 }

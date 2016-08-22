@@ -1,67 +1,104 @@
-  'use strict';
-  
-  let chai = require('chai');
-  let chaiAsPromised = require('chai-as-promised');
-  let http = require('http');
-  chai.use(chaiAsPromised);
-  
-  let expect = chai.expect;
-  chai.should();
-  
-  let updateService = require('../update.service');
+'use strict';
 
+var updateService = require('../update.service');
+var expect = require('chai').expect;
+var nock = require('nock');
+var testUrl = 'http://test.wicked.tech';
+var testConfig = {
+  port: 8000,
+  maxFileUpdates: 5,
+  zipDirectory: '/opt/sync/zips/',
+  location: {
+    uuid: 'AMRS location Uuid',
+    name: 'location name'
+  },
+  remoteServer: {
+    host: 'test.wicked.tech',
+    httpConfig: {
+      port: 80,
+      tls: false
+    },
+    sshConfig: {
+      port: 22,
+      zipBasePath: '/opt/sync/',
+      username: 'username',
+      password: 'password',
+      privateKeyFile: '/home/syncuser/.ssh/id_rsa',
+      numberAttempts: 3
+    }
+  },
+  mysql: {
+    connectionLimit: 4,
+    host: 'localhost',
+    database: 'sync_log_db',
+    port: 3306,
+    user: 'sync',
+    password: 'sync',
+    multipleStatements: false
+  }
+};
+
+var updatesResponse = {
+ "result": [
+   {
+     "filename": "2016-08-22 15:29:53.tar.gz",
+     "uuid": "later-uuid",
+     "dateCreated": "2016-08-22 15:29:53",
+     "sequenceNumber": 3,
+     "deltaRange": {
+       "startDatetime": "2016-08-22T10:40:55.000Z",
+       "endDatetime": "2016-08-22 15:29:53"
+     }
+   },
+   {
+     "filename": "2016-08-22 13:40:55.tar.gz",
+     "uuid": "earlier-uuid",
+     "dateCreated": "2016-08-22 13:40:55",
+     "sequenceNumber": 2,
+     "deltaRange": {
+       "startDatetime": "2016-08-22T10:40:06.000Z",
+       "endDatetime": "2016-08-22 13:40:55"
+     }
+   }
+ ]
+};
+
+describe.only('Update service unit tests', function(){
+  var secondResponse = {
+   "result": [{
+       "filename": "2016-08-22 15:29:53.tar.gz",
+       "uuid": "later-uuid",
+       "dateCreated": "2016-08-22 15:29:53",
+       "sequenceNumber": 3,
+       "deltaRange": {
+         "startDatetime": "2016-08-22T10:40:55.000Z",
+         "endDatetime": "2016-08-22 15:29:53"
+       }
+    }]
+  };
   
-  
-  // let updates = require('./updates.js');
-  describe('Update Service getUpdates() Method Tests', () => {
-    it('should be resolved', () => {
-      return updateService.getDbUpdates().should.eventually.deep.equal({
-        name: 'some name'
-      });
-    });
+  var request = nock(testUrl)
+    .get('/db-updates')
+    .reply(200, updatesResponse)
+    .get('/db-updates?lastUuid=earlier-uuid')
+    .reply(200, secondResponse);
     
-    it('See what happens', function() {
-      let http = require('https');
-      let options = {
-        host: 'api.github.com',
-        path: '/repos/request/request',
-        headers: {
-          'User-Agent': 'request'
-        }
-      };
-
-      let cb = function(resp) {
-        let d = '';
-        resp.on('data', function(chunk) {
-          d += chunk;
-        });
-        
-        resp.on('end', function() {
-          var dd = JSON.parse(d);
-          console.log('stuff',JSON.stringify(dd,null,2));
-        })
-        
-        resp.on('error', function(err) {
-          console.log('ther is ero',err);
-        })
-      }
-      // console.log('just before')
-      // request.get(options).then(function() {
-      //   console.log('Hapa je kwa promisify?');
-      // })
-      // .catch(function(err) {
-      //   console.log('something terrible sana')
-      // })
-      var req = http.request(options,cb);
-      //       req.on('error', (e) => {
-      //   console.log('problem with request: ',e.message);
-      // });
-      // console.log(req)
-
-      req.on('error', function(err) {
-        console.log('some is wrong with request', err.message);
-      })
-      req.end();
-      
-    })
-  })
+  it('getDbUpdatesInfoFromServer() should make the correct rest call without lastUuid',
+  function(done) {  
+    updateService.getDbUpdatesInfoFromServer(null,testConfig, function(data) {
+      expect(data).to.be.an('array');
+      expect(data).to.deep.equal(updatesResponse.result);
+      done();
+    }); 
+  });
+    
+  it('getDbUpdatesInfoFromServer() should make correct rest call with lastUuid parameter',
+  function(done) {
+    updateService.getDbUpdatesInfoFromServer({uuid: 'earlier-uuid'}, testConfig, function(data) {
+      expect(data).to.be.an('array');
+      expect(data).to.deep.equal(secondResponse.result);
+      done();
+    });
+  });
+  
+});  
