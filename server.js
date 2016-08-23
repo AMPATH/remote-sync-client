@@ -25,7 +25,9 @@
       throw err;
     }
     var task = updates.scheduleUpdates(serverConfigs.updateSchedule);
-    task.start();
+    if(task) {
+      task.start();
+    }  
     console.log('Kick as* server running at: ', server.info.uri);
   })
 })();

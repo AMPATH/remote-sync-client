@@ -25,7 +25,9 @@ function getLastSyncRecord(recordConsumerCb, consumerArgsArry) {
       console.error('Error acquiring connection from pool');
       throw err;
     }
-    var query = 'select * from ' + tableName + ' where sequence_number = '
+    var status = "'SUCCESS'";
+    var query = 'select * from ' + tableName + ' where status = ' + status 
+                + ' and sequence_number = '
                 + '(select max(sequence_number) from ' + tableName + ')';
     
     console.log('Running query ' + query);            

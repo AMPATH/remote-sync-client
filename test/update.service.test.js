@@ -32,8 +32,8 @@ var testConfig = {
     host: 'localhost',
     database: 'sync_log_db',
     port: 3306,
-    user: 'sync',
-    password: 'sync',
+    user: 'root',
+    password: 'root',
     multipleStatements: false
   }
 };
@@ -102,6 +102,7 @@ describe('Update service unit tests', function(){
   });
   
   it.skip('processUpdates should do the right thing', function(done) {
+    testConfig.remoteServer.host = '45.55.247.221';
     updateService.processUpdates(updatesResponse.result, testConfig, done);
   });
 });  

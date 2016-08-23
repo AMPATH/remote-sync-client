@@ -2,10 +2,8 @@
   'use strict';
   
   var config = require('./config');
-  var configUtil = require('./util.config');
   var execSync = require('child_process').execSync;
   var fs = require('fs');
-  var client = require('scp2');
   var Client = require('scp2').Client;
   var db = require('./db');
   var cron = require('node-cron');
@@ -16,10 +14,14 @@
   var STATUS_SUCCESS = 1;
   var DEFAULT_HTTP_PORT = 80;
   // Schedule the task.
-  function scheduleUpdates(scheduleConfig) {
-    return cron.schedule(scheduleConfig, function() {
+  function scheduleUpdates(scheduleConfig, once) {
+    if(once) {
       db.getLastSyncRecord(getDbUpdatesInfoFromServer, [ config, processUpdates]);
-    });
+    } else {
+      return cron.schedule(scheduleConfig, function() {
+        db.getLastSyncRecord(getDbUpdatesInfoFromServer, [ config, processUpdates]);
+      });
+    }
   }
   /**
    * Fetches the db updates from the server
@@ -32,7 +34,8 @@
       host: config.remoteServer.host,
       port: config.remoteServer.httpConfig.port || DEFAULT_HTTP_PORT,
     };
-
+    
+    console.log('Getting new updates from: ' + options.path);
     var req = http.request(options, function(resp) {
       var serverStuff = '';
       resp.on('data', function(chunk) {
@@ -41,7 +44,11 @@
       
       resp.on('end', function(){
         var updatesDetails = JSON.parse(serverStuff);
+        if(updatesDetails.result && updatesDetails.result.length>0) {
           processUpdates(updatesDetails.result, config);
+        } else {
+          console.log('No new updates, the server returned an empty array');
+        }
       });
       
       resp.on('error', function(err) {
@@ -77,7 +84,8 @@
     for(var i=0; i<maxFilesNumber; i++) {
       clients[i] = new Client();
       clients[i].defaults({
-        host: config.remoteServer.host,
+        host: config.remoteServer.sshConfig.host || config.remoteServer.host,
+        port: config.remoteServer.sshConfig.port || 22,
         username: config.remoteServer.sshConfig.username,
         password: config.remoteServer.sshConfig.password,
         // privateKey: ...
@@ -93,16 +101,18 @@
     }
     
     var __updateDb = function(updates, status) {
-      var inflateCmd = 'tar xz -C ' + config.zipDirectory;
+      var openmrsDatabase = config.openmrsDatabase || 'amrs';
+      var inflateCmd = 'tar xz -C '; 
       var cmd = 'mysql -u' + config.mysql.user + ' -p' + config.mysql.password
-                + ' ' + config.mysql.database;
-
+                + ' ' + openmrsDatabase;
+                
+      var _run_command = function(command) {
+        console.log('Running ' + command);
+        execSync(command);
+      };
+                
       for(var z=0; z<updates.length; z++) {
         if(status[z] == STATUS_SUCCESS) {
-          var dateRun = (new Date()).toISOString()
-                          .substring(0, 19).replace('T', ' ');
-          var fileInflateCmd = inflateCmd + ' -f ' +updates[z].filePath;
-          
           if(updates[z].filePath.lastIndexOf('.tar.gz') != -1) {
             var until = updates[z].filePath.lastIndexOf('.tar.gz');
             updates[z].dirname = updates[z].filePath.substring(0, until);
@@ -115,34 +125,51 @@
             throw new Error('Wrong file type passed! ' + updates[z].filePath);
           }
           
+          var dateRun = (new Date()).toISOString()
+                          .substring(0, 19).replace('T', ' ');
+
+          execSync('mkdir -p ' + updates[z].dirname);
+          var fileInflateCmd = inflateCmd + updates[z].dirname + ' -f ' + updates[z].filePath;
+
           try {
             console.log('Running ' + fileInflateCmd);
             execSync(fileInflateCmd);
             var files = fs.readdirSync(updates[z].dirname);
             
-            console.log('Running sql files ' + files.join(','));
+            console.log(updates[z].dirname + ':Running with files ' + files.join(','));
+            var disableChecksCmd = cmd + ' -e "SET GLOBAL FOREIGN_KEY_CHECKS=0"';
+            var enableChecksCmd = cmd + ' -e "SET GLOBAL FOREIGN_KEY_CHECKS=1"';
+            _run_command(disableChecksCmd);
             files.forEach(function(file) {
               if(file.endsWith('.sql')) {
+                var tableName = file.substring(0, file.indexOf('.sql'));
+                var checkTableExistCmd = cmd + " -e \"SHOW TABLES LIKE '"+ tableName + "'\"";
+                var retValue = execSync(checkTableExistCmd);
+                if(retValue.toString() != ''){
                 var mysqlCmd = cmd + ' < ' + updates[z].dirname + '/' + file;
                 try {
                   console.log('Importing ' + updates[z].dirname + '/' +file);
-                  execSync(mysqlCmd);
+                  _run_command(mysqlCmd);
                 } catch (err) {
+                  _run_command(enableChecksCmd);
                   // Write a log file 
-                  var table = file.substring(0,file.lastIndexOf('.sql'));
-                  var errorFile = updates[z].zipDirectory + 'errors/table_'
-                              + table + '_' + (new Date()).toISOString() + '.log';
-                  var message = 'There was an error importing data from ' + file
-                            + '\n' +  err.stack || err.message;
-                  fs.writeFileSync(errorFile, message);
+                  // var table = file.substring(0,file.lastIndexOf('.sql'));
+                  // var errorFile = config.errorDirectory + 'table_' + table
+                  //              + '_' + (new Date()).toISOString() + '.log';
+                  // var message = 'There was an error importing data from ' + file
+                  //           + '\n' +  err.stack || err.message;
+                  //           
+                  // fs.writeFileSync(errorFile, message);
                   throw err;          
+                }
                 }  
               }
             });
-               
+            _run_command(enableChecksCmd);   
           } catch (err) {
             var details = err.stack || err.message;
-            var query = "insert into client_sync_log(filename,uuid,datetime_run,"
+            var query = "insert into " + config.mysql.database 
+                + ".client_sync_log(filename,uuid,datetime_run,"
                 + "sequence_number,status,details) values('" 
                 + updates[z].filename + "','"
                 + updates[z].uuid + "','"
@@ -151,14 +178,15 @@
                 + "'ERROR'," + mysql.escape(details) + ")"; 
             
             var recordErrorCmd = cmd + ' -e "' + query + '"';    
-            execSync(recordErrorCmd);     
+            _run_command(recordErrorCmd);     
             console.error('Error updating database', err);
             throw err;
           }
           
           // Reflect in sync log
           try {
-            var query = "insert into client_sync_log(filename,uuid,datetime_run,"
+            var query = "insert into " + config.mysql.database 
+                + ".client_sync_log(filename,uuid,datetime_run,"
                 + "sequence_number,status) values('" 
                 + updates[z].filename + "','"
                 + updates[z].uuid + "','"
@@ -187,9 +215,11 @@
       (function(index) {
           status[index] = STATUS_PROGRESS;
           pending++;
-          var src = config.remoteServer.sshConfig.zipBasePath + updates[index].filename;
+          var cleanFilename = updates[index].filename.replace(/\s/g,'-');
+          cleanFilename = cleanFilename.replace(/:/g, '.');
+          var src = config.remoteServer.sshConfig.zipBasePath + cleanFilename;
           var dest = config.zipDirectory;
-          updates[index].filePath = dest + updates[index].filename;
+          updates[index].filePath = dest + cleanFilename;
           clients[index].download(src, updates[index].filePath , function(err) {
             if(err) {
               status[index] = STATUS_ERROR;
