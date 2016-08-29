@@ -2,12 +2,14 @@
   'use strict';
   
   var config = require('./config');
+  var utilConfig = require('./util.config');
   var execSync = require('child_process').execSync;
   var fs = require('fs');
   var Client = require('scp2').Client;
   var db = require('./db');
   var cron = require('node-cron');
   var mysql = require('mysql');
+  var logger = require('./log');
   
   var STATUS_ERROR = 2;
   var STATUS_PROGRESS = 0;
@@ -16,8 +18,10 @@
   // Schedule the task.
   function scheduleUpdates(scheduleConfig, once) {
     if(once) {
+      logger.verbose('Running updates just once');
       db.getLastSyncRecord(getDbUpdatesInfoFromServer, [ config, processUpdates]);
     } else {
+      logger.verbose('Scheduling updates to run in ' + scheduleConfig);
       return cron.schedule(scheduleConfig, function() {
         db.getLastSyncRecord(getDbUpdatesInfoFromServer, [ config, processUpdates]);
       });
@@ -35,7 +39,7 @@
       port: config.remoteServer.httpConfig.port || DEFAULT_HTTP_PORT,
     };
     
-    console.log('Getting new updates from: ' + options.path);
+    logger.info('Getting new updates from: ' + utilConfig.getHttpServerBaseUrl(config) + options.path);
     var req = http.request(options, function(resp) {
       var serverStuff = '';
       resp.on('data', function(chunk) {
@@ -44,20 +48,21 @@
       
       resp.on('end', function(){
         var updatesDetails = JSON.parse(serverStuff);
+        logger.debug('Received updates from server: ' + updatesDetails);
         if(updatesDetails.result && updatesDetails.result.length>0) {
           processUpdates(updatesDetails.result, config);
         } else {
-          console.log('No new updates, the server returned an empty array');
+          logger.debug('No new updates, the server returned an empty array');
         }
       });
       
       resp.on('error', function(err) {
-        console.error('Server error: ' + err.message);
+        logger.error('Server error: ' + err.message);
       });
     });
     
     req.on('error', function(err) {
-      console.error('Request/client error: ',err);
+      logger.error('Request/client error: ',err);
     });
     req.end();
   }
@@ -107,7 +112,7 @@
                 + ' ' + openmrsDatabase;
                 
       var _run_command = function(command) {
-        console.log('Running ' + command);
+        logger.debug('Running ' + command);
         execSync(command);
       };
                 
@@ -132,11 +137,11 @@
           var fileInflateCmd = inflateCmd + updates[z].dirname + ' -f ' + updates[z].filePath;
 
           try {
-            console.log('Running ' + fileInflateCmd);
+            logger.debug('Running ' + fileInflateCmd);
             execSync(fileInflateCmd);
             var files = fs.readdirSync(updates[z].dirname);
             
-            console.log(updates[z].dirname + ':Running with files ' + files.join(','));
+            logger.debug(updates[z].dirname + ':Running with files ' + files.join(','));
             var disableChecksCmd = cmd + ' -e "SET GLOBAL FOREIGN_KEY_CHECKS=0"';
             var enableChecksCmd = cmd + ' -e "SET GLOBAL FOREIGN_KEY_CHECKS=1"';
             _run_command(disableChecksCmd);
@@ -148,7 +153,7 @@
                 if(retValue.toString() != ''){
                 var mysqlCmd = cmd + ' < ' + updates[z].dirname + '/' + file;
                 try {
-                  console.log('Importing ' + updates[z].dirname + '/' +file);
+                  logger.info('Importing ' + updates[z].dirname + '/' +file);
                   _run_command(mysqlCmd);
                 } catch (err) {
                   _run_command(enableChecksCmd);
@@ -179,7 +184,7 @@
             
             var recordErrorCmd = cmd + ' -e "' + query + '"';    
             _run_command(recordErrorCmd);     
-            console.error('Error updating database', err);
+            logger.error('Error updating database', err);
             throw err;
           }
           
@@ -196,12 +201,12 @@
             
             //Update DB after the previous update call is done
             var updateTableCmd = cmd + ' -e "' + query +'"';
-            console.log('Running query ' + query);
+            logger.info('Running query ' + query);
             execSync(updateTableCmd); 
           }
           catch(dbErr) {
-            console.error('Error updating sync log table with error', dbErr);
-            console.log('IMPORTANT! Updates from ' + updates[z].filePath 
+            logger.error('Error updating sync log table with error', dbErr);
+            logger.warn('IMPORTANT! Updates from ' + updates[z].filePath 
                       + ' may have proceeded successfully, check to confirm');
           }
         } else {
@@ -223,11 +228,11 @@
           clients[index].download(src, updates[index].filePath , function(err) {
             if(err) {
               status[index] = STATUS_ERROR;
-              console.error('Error downloading ' + src, err);
+              logger.error('Error downloading ' + src, err);
             }
             else {
               status[index] = STATUS_SUCCESS;
-              console.log('Downloaded ' + src + ' to ' + updates[index].filePath);
+              logger.info('Downloaded ' + src + ' to ' + updates[index].filePath);
             }
             pending--;
             if(__allDone(status)) {

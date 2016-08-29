@@ -4,6 +4,7 @@ var mysql = require('mysql');
 var config = require('./config');
 var pool = mysql.createPool(config.mysql);
 var Promise = require('bluebird');
+var logger = require('./log');
 
 // Db values
 var dbName = config.mysql.database || 'sync_log_db';
@@ -12,7 +13,7 @@ var tableName = 'client_sync_log';
 function acquireConnection(consumerCb) {
   pool.getConnection(function(err, connection) {
     if(err) {
-      console.error('Error acquiring connection from pool');
+      logger.error('Error acquiring connection from pool');
       throw err;
     }
     consumerCb(null,connection);
@@ -22,7 +23,7 @@ function acquireConnection(consumerCb) {
 function getLastSyncRecord(recordConsumerCb, consumerArgsArry) {
   pool.getConnection(function(err, connection) {
     if(err) {
-      console.error('Error acquiring connection from pool');
+      logger.error('Error acquiring connection from pool');
       throw err;
     }
     var status = "'SUCCESS'";
@@ -30,7 +31,7 @@ function getLastSyncRecord(recordConsumerCb, consumerArgsArry) {
                 + ' and sequence_number = '
                 + '(select max(sequence_number) from ' + tableName + ')';
     
-    console.log('Running query ' + query);            
+    logger.debug('Running query ' + query);            
     connection.query(query, function(err, results) {
       connection.release();
       if(err) {
