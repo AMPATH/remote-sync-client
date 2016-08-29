@@ -1,7 +1,11 @@
 (function() {
   'use strict';
   
-  function getHttpServerBaseUrl(userJsonConfig) {    
+  function getHttpServerBaseUrl(userJsonConfig) {
+    if(!userJsonConfig) {
+      throw new Error('Config object not passed');
+    }    
+    
     let baseUrl = '';
     if(userJsonConfig.remoteServer.tls) {
       baseUrl = 'https://';
@@ -12,11 +16,11 @@
     baseUrl += userJsonConfig.remoteServer.host;
     
     if(userJsonConfig.remoteServer.httpConfig.port) {
-      baseUrl += ':' + userJsonConfig.remoteServer.httpConfig.port + '/';  
+      baseUrl += ':' + userJsonConfig.remoteServer.httpConfig.port;  
     }
     
     if(userJsonConfig.remoteServer.httpConfig.appName) {
-      baseUrl += userJsonConfig.remoteServer.httpConfig.appName + '/';
+      baseUrl += '/' + userJsonConfig.remoteServer.httpConfig.appName;
     }
     
     return baseUrl;

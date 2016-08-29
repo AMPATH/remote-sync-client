@@ -16,6 +16,7 @@ Create a configuration file `config.json` at the root of the application with th
   "zipDirectory": "/opt/sync-client/",  // Where downloaded zip files should be stored (ensure proper permissions)
   "errorDirectory": "/opt/sync-client/errors/", //dir to record errors on client
   "openmrsDatabase": "amrs",            // Client Openmrs database name to be updated 
+  "logFile": "logs/client.log",         // If not specified default is logs/client.log relative to app dir
   "location": {                                 // (mysql username and password should access to this database)
     "uuid": "AMRS location Uuid",     // uuid of the client location (from openmrs.location)
     "name": "location name"           // client location name

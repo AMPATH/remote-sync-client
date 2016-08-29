@@ -4,6 +4,7 @@
   const Hapi = require('hapi');
   const serverConfigs = require('./config');
   const updates = require('./update.service');
+  const logger = require('./log');
   
   const server = new Hapi.Server();
   
@@ -28,6 +29,6 @@
     if(task) {
       task.start();
     }  
-    console.log('Kick as* server running at: ', server.info.uri);
+    logger.info('Kick as* server running at: ', server.info.uri);
   })
 })();
